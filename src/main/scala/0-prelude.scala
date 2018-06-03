@@ -24,7 +24,7 @@ object PeanoNumbers {
     *
     * Hint: there is a type in the standard library that has exactly the structure we want.
     */
-  type PeanoNumberF[A] = TODO
+  type PeanoNumberF[A] = Option[A]
 
   /**
     * The problem with the PeanonumberF encoding is that now, different numbers
@@ -32,7 +32,7 @@ object PeanoNumbers {
     *
     * We need a fix-point of PeanoNumberF to build a type that can represent all numbers.
     */
-  type PeanoNumber = TODO
+  type PeanoNumber = Fix[PeanoNumberF]
 
   /**
     * Now let's write our very first Algebra! Yay!
@@ -40,19 +40,22 @@ object PeanoNumbers {
     * We want to transform our Peano representation to Int. It's as simple as counting
     * the "layers" of "successor".
     */
-  def countLayers: Algebra[PeanoNumberF, Int] = TODO
+  def countLayers: Algebra[PeanoNumberF, Int] = {
+    case Some(x) => 1 + x
+    case None    => 0
+  }
 
   /**
     * We now have all the ingredients needed to use our first recursion scheme.
     *
     * Hint: this will use the algebra defined above to *destroy* our recursive structure.
     */
-  def toInt(peano: PeanoNumber): Int = TODO
+  def toInt(peano: PeanoNumber): Int = peano.cata(countLayers)
 
   /**
     * Now we just need a value to test our functions
     */
-  val three: PeanoNumber = TODO
+  val three: PeanoNumber = Fix(Some(Fix(Some(Fix(Some(Fix[PeanoNumberF](None)))))))
 
   assert(toInt(three) == 3)
 }
