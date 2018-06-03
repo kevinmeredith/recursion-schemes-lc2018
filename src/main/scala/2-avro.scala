@@ -67,7 +67,19 @@ trait Labelling {
     * but modified such that its "content" is not just a "smaller schema" as it was initially, but a new "seed"
     * consisting of a (larger) path, and the said "smaller schema".
     */
-  def labelNodesWithPath[T](implicit T: Recursive.Aux[T, SchemaF]): Coalgebra[Labelled, (Path, T)] = TODO
+  //  (Path, T) => EnvT[Path, SchemaF, (Path, T)] =>
+  def labelNodesWithPath[T](implicit T: Recursive.Aux[T, SchemaF]): Coalgebra[Labelled, (Path, T)] = //(Path, T) => Labelled[(Path, T)] /* Coalgebra[Labelled, (Path, T)] */ = {
+    {
+      case (path, t) =>
+        T.project(t) match {
+          case StructF(fields) =>
+            EnvT(path, StructF(fields.map {
+              case (name, schema) =>
+                (name, (path :+ name, schema))
+            }))
+          case x => EnvT(path, x.map((path, _)))
+        }
+    }
 
   /**
     * Now the algebra (that we had no way to write before) becomes trivial. All we have to do is to use
@@ -76,7 +88,26 @@ trait Labelling {
     * To extract the label (resp. node) of an EnvT you can use pattern-matching (EnvT contains only a pair
     * (label, node)), or you can use the `ask` and `lower` methods that return the label and node respectively.
     */
-  def labelledToSchema: Algebra[Labelled, Schema] = TODO
+  // Labelled[Schema] => Schema
+  def labelledToSchema: Algebra[Labelled, Schema] = { env =>
+    env.lower match {
+      case StructF(fields) =>
+        fields
+          .foldLeft(SchemaBuilder.record(env.ask.mkString("a", ".", "b")).fields) {
+            case (builder, (k, v)) =>
+              builder.name(k).`type`(v).noDefault
+          }
+          .endRecord()
+      case ArrayF(elem) => SchemaBuilder.array.items(elem)
+      case BooleanF()   => Schema.create(Schema.Type.BOOLEAN)
+      case DateF()      => LogicalTypes.timestampMillis().addToSchema(Schema.create(Schema.Type.LONG))
+      case DoubleF()    => Schema.create(Schema.Type.DOUBLE)
+      case FloatF()     => Schema.create(Schema.Type.FLOAT)
+      case IntegerF()   => Schema.create(Schema.Type.INT)
+      case LongF()      => Schema.create(Schema.Type.LONG)
+      case StringF()    => Schema.create(Schema.Type.STRING)
+    }
+  }
 
   def schemaFToAvro[T](schemaF: T)(implicit T: Recursive.Aux[T, SchemaF]): Schema =
     (List.empty[String], schemaF).hylo(labelledToSchema, labelNodesWithPath)
@@ -102,7 +133,32 @@ trait UsingARegistry {
 
   def fingerprint(fields: Map[String, Schema]): Int = fields.hashCode
 
-  def useARegistry: AlgebraM[Registry, SchemaF, Schema] = TODO
+  // type AlgebraM[M[_], F[_], A]        = F[A]    => M[A]
+
+  def useARegistry: AlgebraM[Registry, SchemaF, Schema] = {
+    case StructF(fields) =>
+      State { registry =>
+        val fp = fingerprint(fields)
+        if (registry.contains(fp)) (registry, registry(fp))
+        else {
+          val schema = fields
+            .foldLeft(SchemaBuilder.record("a" + fp.toString).fields) {
+              case (builder, (name, sch)) =>
+                builder.name(name).`type`(sch).noDefault()
+            }
+            .endRecord()
+          (registry + ((fp, schema)), schema)
+        }
+      }
+    case ArrayF(elem) => State.state(elem)
+    case BooleanF()   => State.state(Schema.create(Schema.Type.STRING))
+    case LongF()      => State.state(Schema.create(Schema.Type.LONG))
+    case IntegerF()   => State.state(Schema.create(Schema.Type.INT))
+    case DateF()      => State.state(LogicalTypes.timestampMillis().addToSchema(Schema.create(Schema.Type.LONG)))
+    case FloatF()     => State.state(Schema.create(Schema.Type.FLOAT))
+    case DoubleF()    => State.state(Schema.create(Schema.Type.FLOAT))
+    case StringF()    => State.state(Schema.create(Schema.Type.FLOAT))
+  }
 
   implicit def schemaFTraverse: Traverse[SchemaF] = TODO
 
