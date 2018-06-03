@@ -66,9 +66,11 @@ object PeanoNumbers {
 object BinaryTrees {
 
   sealed trait Tree
-  final case class Branch(label: Int, left: Tree, right: Tree) extends Tree
-  final case class Leaf(label: Int)                            extends Tree
-  final case class Empty()                                     extends Tree
+  object Tree {
+    final case class Branch(label: Int, left: Tree, right: Tree) extends Tree
+    final case class Leaf(label: Int)                            extends Tree
+    final case class Empty()                                     extends Tree
+  }
 
   /**
     * So the first thing to do is to "translate" our Tree to a pattern-functor.
@@ -76,18 +78,37 @@ object BinaryTrees {
     * of Tree by this type parameter in the ADT.
     */
   sealed trait TreeF[A]
-  // TODO
+  object TreeF {
+    final case class Branch[A](label: Int, left: A, right: A) extends TreeF[A]
+    final case class Leaf[A](label: Int)                      extends TreeF[A]
+    final case class Empty[A]()                               extends TreeF[A]
+  }
 
   /**
     * Of course, we need to have an instance of Functor[TreeF] for it to be a real pattern-functor.
     */
-  implicit val treeFFunctor: Functor[TreeF] = TODO
+  implicit val treeFFunctor: Functor[TreeF] = new Functor[TreeF] {
+    override def map[A, B](fa: TreeF[A])(f: A => B): TreeF[B] = fa match {
+      case TreeF.Branch(x, l, r) => TreeF.Branch(x, f(l), f(r))
+      case TreeF.Leaf(x)         => TreeF.Leaf(x)
+      case TreeF.Empty()         => TreeF.Empty()
+    }
+  }
 
   /**
     * It's a good idea to have a pair of (co)algebras that go from Tree to TreeF (and vice versa).
     */
-  def treeAlg: Algebra[TreeF, Tree]     = TODO
-  def treeCoalg: Coalgebra[TreeF, Tree] = TODO
+  def treeAlg: TreeF[Tree] => Tree /* Algebra[TreeF, Tree] */ = {
+    case TreeF.Empty()         => Tree.Empty()
+    case TreeF.Leaf(x)         => Tree.Leaf(x)
+    case TreeF.Branch(x, l, r) => Tree.Branch(x, l, r)
+  }
+
+  def treeCoalg: Tree => TreeF[Tree] = /*Coalgebra[TreeF, Tree]*/ {
+    case Tree.Empty()         => TreeF.Empty()
+    case Tree.Branch(x, l, r) => TreeF.Branch(x, l, r)
+    case Tree.Leaf(x)         => TreeF.Leaf(x)
+  }
 
   /**
     * These two (co)algebras make it easy to provide a Birecursive instance for Tree/TreeF.
@@ -104,9 +125,14 @@ object BinaryTrees {
     * The produced list contains the labels of all the nodes in the tree
     * as enumerated by a depth-first, left-to-right traversal.
     */
-  def toList: Algebra[TreeF, List[Int]] = TODO
+  def toList: TreeF[List[Int]] => List[Int] /*Algebra[TreeF, List[Int]]*/ = {
+    case TreeF.Branch(x, l, r) => l ++ List(x) ++ r
+    case TreeF.Leaf(x)         => List(x)
+    case TreeF.Empty()         => Nil
+  }
 
-  val testTree: Recursive.AllOps[Tree, TreeF] = Branch(12, Branch(10, Leaf(1), Empty()), Leaf(15))
+  val testTree: Recursive.AllOps[Tree, TreeF] =
+    Tree.Branch(12, Tree.Branch(10, Tree.Leaf(1), Tree.Empty()), Tree.Leaf(15))
 
   assert(testTree.cata(toList) == List(1, 10, 12, 15))
 
